@@ -1,27 +1,46 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useEffect, useState } from "react";
 import { Message } from "@/components/message";
 import { useScrollToBottom } from "@/components/use-scroll-to-bottom";
 import { motion } from "framer-motion";
-import { GitIcon, MasonryIcon, VercelIcon } from "@/components/icons";
 import Link from "next/link";
 import { useChat } from "ai/react";
+import { SuggestedActions } from "@/components/suggested-actions";
 
-export default function Home() {
-  const { messages, handleSubmit, input, setInput, append } = useChat();
+export default function Page() {
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isInitialized, setIsInitialized] = useState(true);
+  
+  // Clear session when explicitly starting a new conversation
+  const startNewConversation = () => {
+    setSessionId(null);
+    window.location.reload();
+  };
+
+  // Custom chat configuration with session ID handling
+  const { messages, handleSubmit, input, setInput, append, isLoading } = useChat({
+    api: "/api/chat",
+    initialMessages: (sessionId) ? [{ 
+      id: 'system-1',
+      role: 'system', 
+      content: `Session-ID: ${sessionId}\nThis is a performance task builder assistant.` 
+    }] : [],
+    id: sessionId || undefined,
+    onResponse: (response: Response) => {
+      // Store session ID from headers if present
+      const responseSessionId = response.headers.get('X-Session-ID');
+      if (responseSessionId) {
+        console.log('[Client] Received session ID:', responseSessionId);
+        setSessionId(responseSessionId);
+      }
+    },
+    headers: sessionId ? { 'X-Session-ID': sessionId } : {}
+  });
 
   const inputRef = useRef<HTMLInputElement>(null);
   const [messagesContainerRef, messagesEndRef] =
     useScrollToBottom<HTMLDivElement>();
-
-  const suggestedActions = [
-    {
-      title: "How many 'r's",
-      label: "are in the word strawberry?",
-      action: "How many 'r's are in the word strawberry?",
-    },
-  ];
 
   return (
     <div className="flex flex-row justify-center pb-20 h-dvh bg-white dark:bg-zinc-900">
@@ -30,37 +49,31 @@ export default function Home() {
           ref={messagesContainerRef}
           className="flex flex-col gap-6 h-full w-dvw items-center overflow-y-scroll"
         >
-          {messages.length === 0 && (
+          {messages.length === 0 && !sessionId && (
             <motion.div className="h-[350px] px-4 w-full md:w-[500px] md:px-0 pt-20">
               <div className="border rounded-lg p-6 flex flex-col gap-4 text-zinc-500 text-sm dark:text-zinc-400 dark:border-zinc-700">
-                <p className="flex flex-row justify-center gap-4 items-center text-zinc-900 dark:text-zinc-50">
-                  <VercelIcon size={16} />
-                  <span>+</span>
-                  <MasonryIcon />
+                <h2 className="text-xl font-bold text-center text-zinc-900 dark:text-zinc-50 mb-2">
+                  Performance Task Builder
+                </h2>
+                <p className="text-center mb-2">
+                  Design curriculum performance tasks for neurodiverse learners
                 </p>
-                <p className="text-center">
-                  Multi-step generations with gpt-4o-mini (
-                  <Link
-                    className="text-blue-500 dark:text-blue-400"
-                    href="https://openai.com"
-                    target="_blank"
-                  >
-                    OpenAI
-                  </Link>
-                  ) and the{" "}
-                  <Link
-                    className="text-blue-500 dark:text-blue-400"
-                    href="https://sdk.vercel.ai"
-                    target="_blank"
-                  >
-                    AI SDK
-                  </Link>
-                </p>
+                <div className="text-sm px-4">
+                  <p className="mb-2">This tool will guide you through a 6-step process:</p>
+                  <ol className="list-decimal list-inside space-y-1 text-left ml-2">
+                    <li>Generate GRASPS-aligned task ideas</li>
+                    <li>Create diverse focus topics</li>
+                    <li>Present product options</li>
+                    <li>Define student requirements</li>
+                    <li>Create assessment rubrics</li>
+                    <li>Generate final task output</li>
+                  </ol>
+                </div>
               </div>
             </motion.div>
           )}
 
-          {messages.map((message, i) => {
+          {messages.filter((m: any) => m.role !== 'system').map((message: any, i: number) => {
             return (
               <Message
                 key={message.id}
@@ -74,38 +87,36 @@ export default function Home() {
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="grid sm:grid-cols-1 gap-2 w-full px-4 md:px-0 mx-auto md:max-w-[500px] mb-4">
-          {messages.length === 0 &&
-            suggestedActions.map((suggestedAction, index) => (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.05 * index }}
-                key={index}
-                className={index > 1 ? "hidden sm:block" : "block"}
-              >
-                <button
-                  onClick={async () => {
-                    append({
-                      role: "user",
-                      content: suggestedAction.action,
-                    });
-                  }}
-                  className="w-full text-left border border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-300 rounded-lg p-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex flex-col"
-                >
-                  <span className="font-medium">{suggestedAction.title}</span>
-                  <span className="text-zinc-500 dark:text-zinc-400">
-                    {suggestedAction.label}
-                  </span>
-                </button>
-              </motion.div>
-            ))}
-        </div>
+        {/* Suggested actions component with loading awareness */}
+        <SuggestedActions 
+          messages={messages} 
+          isLoading={isLoading}
+          isNewSession={!sessionId || messages.length === 0}
+          onActionClick={(action) => {
+            append({
+              role: "user",
+              content: action,
+            });
+          }} 
+        />
 
         <form
           className="flex flex-col gap-2 relative items-center"
           onSubmit={handleSubmit}
         >
+          <div className="flex w-full justify-between mb-2 md:max-w-[500px]">
+            <div className="text-xs text-zinc-500">
+              {sessionId ? `Session: ${sessionId.substring(0, 8)}...` : 'New session'}
+            </div>
+            <button 
+              type="button"
+              onClick={startNewConversation}
+              className="text-xs text-red-500 hover:text-red-700"
+            >
+              Reset Session
+            </button>
+          </div>
+          
           <input
             ref={inputRef}
             className="bg-zinc-100 rounded-md px-2 py-1.5 w-full outline-none dark:bg-zinc-700 text-zinc-800 dark:text-zinc-300 md:max-w-[500px] max-w-[calc(100dvw-32px)]"
